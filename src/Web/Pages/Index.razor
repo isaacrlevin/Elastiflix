@@ -1,0 +1,212 @@
+﻿@page "/"
+
+@inject HttpClient client
+@inject NavigationManager NavigationManager
+@inject IOptionsMonitor<Settings> optionsAccessor
+
+<div class="app" style="color:black">
+    <div class="nav">
+        <a href="/">
+            <img class="nav__logo"
+                 src="/logo.svg"
+                 alt="" />
+        </a>
+        <div class="search_bar">
+            <MudAutocomplete Style="@($"background:{Theme.Palette.White}; border-radius: 6px; width: 300px")" T="SearchBarResultView" @bind-Text="searchText" Label="Search by title, cast name..." OnKeyUp="@SearchRedirect" SearchFunc="@Search"
+                             ResetValueOnEmptyText="true"
+                             CoerceText="false" CoerceValue="false"
+                             AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary">
+                <ItemTemplate Context="e">
+                    <MudLink Href="@($"/search?q={e.Text}")" Class="mb-n1 mr-3">@e.Text</MudLink>
+                </ItemTemplate>
+            </MudAutocomplete>
+        </div>
+    </div>
+    <header class="banner">
+        <div class="banner__contents">
+            <h1 class="banner__title">Luca</h1>
+            <div class="banner__buttons">
+                <button class="banner__button">Play</button>
+                <button class="banner__button">My List</button>
+            </div>
+            <p class="banner__description">Luca and his best friend Alberto experience an unforgettable summer on the Italian Riviera. But all the fun is threatened by a deeply-held secret: they are sea monsters...</p>
+        </div>
+        <div class="banner--fadeBottom"></div>
+    </header>
+    <div class="recommendations">
+
+        <div class="row">
+            <h2>Recent movies</h2>
+            <div class="row__posters">
+                @foreach (var r in recent.Where(a => !string.IsNullOrEmpty(a.poster_path.raw)))
+                {
+                    <img class="row__poster row__posterLarge"
+                     src="https://image.tmdb.org/t/p/original/@r.poster_path.raw"
+                     alt=@r.title.raw />
+                }
+            </div>
+        </div>
+
+        <div class="row">
+            <h2>Popular movies</h2>
+            <div class="row__posters">
+                @foreach (var r in popular.Where(a => !string.IsNullOrEmpty(a.poster_path.raw)))
+                {
+                    <img class="row__poster row__posterLarge"
+                     src="https://image.tmdb.org/t/p/original/@r.poster_path.raw"
+                     alt=@r.title.raw />
+                }
+            </div>
+        </div>
+
+    </div>
+</div>
+
+
+
+@code {
+    private string searchText = "";
+    private List<Result> popular = new List<Result>();
+    private List<Result> recent = new List<Result>();
+    private MudTheme Theme = new MudTheme();
+    private Settings settings;
+
+
+    private void SearchRedirect(KeyboardEventArgs e)
+    {
+        if (e.Code == "Enter" || e.Code == "NumpadEnter")
+        {
+            NavigationManager.NavigateTo($"search?q={searchText}");
+        }
+
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = optionsAccessor.CurrentValue;
+        client.BaseAddress = new Uri(settings.ElasticTenantUrl);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ElasticEngineToken);
+
+        await GetRecent();
+        await GetPopular();
+    }
+
+    private async Task GetPopular()
+    {
+        SearchRequest searchRequest = new SearchRequest
+            {
+                query = "",
+                sort = new List<Sort>
+                 {
+                  new Sort
+                  {
+                   field = "popularity",
+                    direction = "desc"
+                  }
+                 },
+                page = new Web.Page
+                {
+                    size = 10,
+                    current = 1
+                }
+            };
+
+        var request = SearchRequest.BuildSearchRequest(searchRequest);
+
+        var searchResponse = await client.PostAsync($"{settings.ElasticEngineName}/search", new StringContent(request, Encoding.UTF8, "application/json"));
+
+        if (searchResponse.IsSuccessStatusCode)
+        {
+            var searchResults = await searchResponse.Content.ReadFromJsonAsync<SearchResult>();
+            if (searchResults.results != null)
+            {
+                popular = searchResults.results.ToList();
+            }
+        }
+    }
+
+    private async Task GetRecent()
+    {
+        SearchRequest searchRequest = new SearchRequest
+            {
+                query = "",
+                sort = new List<Sort>
+                 {
+                  new Sort
+                  {
+                   field = "release_date",
+                    direction = "desc"
+                  }
+                 },
+                page = new Web.Page
+                {
+                    size = 20,
+                    current = 1
+                }
+            };
+
+        var request = SearchRequest.BuildSearchRequest(searchRequest);
+
+        var searchResponse = await client.PostAsync($"{settings.ElasticEngineName}/search", new StringContent(request, Encoding.UTF8, "application/json"));
+
+        if (searchResponse.IsSuccessStatusCode)
+        {
+            var searchResults = await searchResponse.Content.ReadFromJsonAsync<SearchResult>();
+            if (searchResults.results != null)
+            {
+                recent = searchResults.results.ToList();
+            }
+        }
+    }
+
+    private async Task<IEnumerable<SearchBarResultView>> Search(string value)
+    {
+
+        List<SearchBarResultView> results = new List<SearchBarResultView>();
+        if (value.Length > 3)
+        {
+            searchText = value;
+            // if text is null or empty, don't return values (drop-down will not open)
+            if (string.IsNullOrEmpty(value))
+            {
+                return results;
+            }
+
+            var querySuggestionRequest = new QuerySuggestionRequest
+                {
+                    query = value,
+                    size = 3,
+                    types = new QuerySuggestionRequest.Types
+                    {
+                        documents = new QuerySuggestionRequest.Documents
+                        {
+                            fields = new string[] { "title" }
+                        }
+                    }
+                };
+
+
+            var suggestionResponse = await client.PostAsJsonAsync<QuerySuggestionRequest>($"{settings.ElasticEngineName}/query_suggestion", querySuggestionRequest);
+
+
+            if (suggestionResponse.IsSuccessStatusCode)
+            {
+                var suggestions = await suggestionResponse.Content.ReadFromJsonAsync<QuerySuggestionResult>();
+                if (suggestions.results != null && suggestions.results.documents.Length > 0)
+                {
+
+                    results.AddRange(suggestions.results.documents.Select(a => new SearchBarResultView
+                        {
+                            ResultType = ResultType.Suggestion,
+                            Text = a.suggestion
+                        }));
+                }
+            }
+        }
+        return results;
+    }
+}
+
+
+

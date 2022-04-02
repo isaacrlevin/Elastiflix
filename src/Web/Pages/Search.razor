@@ -1,0 +1,486 @@
+﻿@page "/search"
+
+@inject NavigationManager NavigationManager
+@inject HttpClient client;
+@inject IDialogService DialogService
+@inject IOptionsMonitor<Settings> optionsAccessor
+
+<div class="app" style="color:black">
+    <div class="nav">
+        <a href="/">
+            <img class="nav__logo"
+                 src="/logo.svg"
+                 alt="" />
+        </a>
+    </div>
+    <div className="search-page-wrapper">
+        <div class="search-header">
+            <MudGrid Justify="Justify.FlexStart" Style="word-wrap:break-word">
+                <MudItem xs="10">
+                    <MudAutocomplete Style="@($"background:{Theme.Palette.White}; border-radius: 6px")" T="SearchBarResultView" @bind-Text="searchText" SearchFunc="@AutoComplete"
+                                     ResetValueOnEmptyText="false"
+                                     CoerceText="false" CoerceValue="false"
+                                     AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary">
+                        <ItemTemplate Context="e">
+                            <MudLink Href="@($"/search?q={e.Text}")" Class="mb-n1 mr-3">@e.Text</MudLink>
+                        </ItemTemplate>
+                    </MudAutocomplete>
+                </MudItem>
+                <MudItem xs="2">
+                    <MudSelect T="string" Style="@($"background:{Theme.Palette.White}; border-radius: 6px")" Variant="Variant.Outlined" ValueChanged="SortChanged" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem T="string" Value="@("")">Relevance</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("release_date|asc")">Release Date (ASC)</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("release_date|desc")">Release Date (DESC)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+        </div>
+
+        <div class="euiFlexGroup euiFlexGroup--gutterLarge euiFlexGroup--directionRow euiFlexGroup--responsive">
+            <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                <div class="euiSpacer euiSpacer--l"></div>
+                <div class="euiFlexGroup euiFlexGroup--gutterExtraSmall euiFlexGroup--directionColumn euiFlexGroup--responsive"
+                     style="padding-left: 40px;">
+                    <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                        <fieldset class="sui-facet">
+                            <legend class="sui-facet__title">Cast member</legend>
+                            <div class="sui-facet-search">
+                                <MudTextField Immediate="true" Placeholder="Filter cast" Class="sui-facet-search__text-input" @bind-Value="castFilter" Variant="Variant.Outlined"></MudTextField>
+                            </div>
+                            <br />
+                            <div class="sui-multi-checkbox-facet">
+                                @foreach (var actor in filterList.Where(a => a.Field == "cast" && a.Count > 0 && (!string.IsNullOrEmpty(a.Value) && a.Value.ToLower().Contains(castFilter.ToLower()))))
+                                {
+                                    <label style= class="sui-multi-checkbox-facet__option-label false">
+                                        <div class="sui-multi-checkbox-facet__option-input-wrapper">
+                                            <input type="checkbox" class="sui-multi-checkbox-facet__checkbox" checked="@actor.Checked" onchange="@((ChangeEventArgs val) => CheckBoxChecked(val, "cast", actor.Value))">&nbsp;<span class="sui-multi-checkbox-facet__input-text">@actor.Value</span>
+                                        </div>
+                                    </label>
+                                    <br />
+                                }
+                            </div>
+                        </fieldset>
+                    </div>
+                    <br />
+                    <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                        <fieldset class="sui-facet">
+                            <legend class="sui-facet__title">Genres</legend>
+                            <div class="sui-facet-search">
+                                <MudTextField Immediate="true" Placeholder="Filter genres" Class="sui-facet-search__text-input" @bind-Value="genreFilter" Variant="Variant.Outlined"></MudTextField>
+                            </div>
+                            <br />
+                            <div class="sui-multi-checkbox-facet">
+                                @foreach (var genre in filterList.Where(a => a.Field == "genres" && a.Count > 0 && (!string.IsNullOrEmpty(a.Value) && a.Value.ToLower().Contains(genreFilter.ToLower()))))
+                                {
+                                    <label style= class="sui-multi-checkbox-facet__option-label false">
+                                        <div class="sui-multi-checkbox-facet__option-input-wrapper">
+                                            <input type="checkbox" class="sui-multi-checkbox-facet__checkbox" checked="@genre.Checked" onchange="@((ChangeEventArgs val) => CheckBoxChecked(val, "genres", genre.Value))">&nbsp;<span class="sui-multi-checkbox-facet__input-text">@genre.Value</span>
+                                        </div>
+                                    </label>
+                                    <br />
+                                }
+                            </div>
+                        </fieldset>
+                    </div>
+                    <br />
+                    <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                        <fieldset class="sui-facet">
+                            <legend class="sui-facet__title">User score</legend>
+                            <br />
+                            <div class="sui-multi-checkbox-facet">
+                                @foreach (var score in filterList.Where(a => a.Field == "user_score" && a.Count > 0))
+                                {
+                                    <label style= class="sui-multi-checkbox-facet__option-label false">
+                                        <div class="sui-multi-checkbox-facet__option-input-wrapper">
+                                            <input type="checkbox" class="sui-multi-checkbox-facet__checkbox" checked="@score.Checked" onchange="@((ChangeEventArgs val) => CheckBoxChecked(val, "user_score", score.Value))">&nbsp;<span class="sui-multi-checkbox-facet__input-text">@score.Value</span>
+                                        </div>
+                                    </label>
+                                    <br />
+                                }
+                            </div>
+                        </fieldset>
+                    </div>
+                    <br />
+                    <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                        <fieldset class="sui-facet">
+                            <legend class="sui-facet__title">Runtime</legend>
+                            <br />
+                            <div class="sui-multi-checkbox-facet">
+                                @foreach (var runtime in filterList.Where(a => a.Field == "runtime" && a.Count > 0))
+                                {
+                                    <label style= class="sui-multi-checkbox-facet__option-label false">
+                                        <div class="sui-multi-checkbox-facet__option-input-wrapper">
+                                            <input type="checkbox" class="sui-multi-checkbox-facet__checkbox" checked="@runtime.Checked" onchange="@((ChangeEventArgs val) => CheckBoxChecked(val, "runtime", runtime.Value))">&nbsp;<span class="sui-multi-checkbox-facet__input-text">@runtime.Value</span>
+                                        </div>
+                                    </label>
+                                    <br />
+                                }
+                            </div>
+                        </fieldset>
+                    </div>
+                    <br />
+                    <div class="euiFlexItem euiFlexItem--flexGrowZero">
+                        <fieldset class="sui-facet">
+                            <legend class="sui-facet__title">Production company</legend>
+                            <div class="sui-facet-search">
+                                <MudTextField Immediate="true" Placeholder="Filter production companies" Class="sui-facet-search__text-input" @bind-Value="productionCompanyFilter" Variant="Variant.Outlined"></MudTextField>
+                            </div>
+                            <br />
+                            <div class="sui-multi-checkbox-facet">
+                                @foreach (var productionCompany in filterList.Where(a => a.Field == "production_companies" && a.Count > 0 && (!string.IsNullOrEmpty(a.Value) && a.Value.ToLower().Contains(productionCompanyFilter.ToLower()))))
+                                {
+                                    <label style= class="sui-multi-checkbox-facet__option-label false">
+                                        <div class="sui-multi-checkbox-facet__option-input-wrapper">
+                                            <input type="checkbox" class="sui-multi-checkbox-facet__checkbox" checked="@productionCompany.Checked" onchange="@((ChangeEventArgs val) => CheckBoxChecked(val, "production_companies", productionCompany.Value))">&nbsp;<span class="sui-multi-checkbox-facet__input-text">@productionCompany.Value</span>
+                                        </div>
+                                    </label>
+                                    <br />
+                                }
+                            </div>
+                        </fieldset>
+
+                    </div>
+                </div>
+            </div>
+            <div class="euiFlexItem" style="padding-left: 40px; padding-right: 40px;">
+                <div class="euiSpacer euiSpacer--l"></div>
+                <div class="euiFlexGroup euiFlexGroup--gutterLarge euiFlexGroup--directionColumn euiFlexGroup--responsive">
+
+                    @if (isLoading)
+                    {
+                        <center><Wave Size="200px" /></center>
+                    }
+                    else
+                    {
+                        @if (results.Count == 0)
+                        {
+                            <center>
+                                <MudText Typo="Typo.h2" Style="color:white">No results found</MudText>
+                            </center>
+                        }
+                        else
+                        {
+                            @foreach (var result in results)
+                            {
+                                <div class="euiFlexItem" style="padding-left: 40px; padding-right: 40px">
+                                    <div class="euiSpacer euiSpacer--l"></div>
+                                    <div class="euiFlexGroup euiFlexGroup--gutterLarge euiFlexGroup--directionColumn euiFlexGroup--responsive">
+                                        <div class="euiFlexItem">
+                                            <div class="card" @onclick="@((MouseEventArgs val) => Click(result))">
+                                                <div class="wrapper">
+                                                    <div class="image">
+                                                        <div class="poster">
+                                                            <img loading="lazy"
+                                                     class="poster"
+                                                     src="https://image.tmdb.org/t/p/original/@result.poster_path.raw"
+                                                     alt="@result.title.raw" />
+                                                        </div>
+                                                    </div>
+                                                    <div class="details">
+                                                        <div class="wrapper">
+                                                            <div class="title">
+                                                                <div>
+                                                                    <h2>@result.title.raw</h2>
+                                                                </div>
+                                                                <span class="release_date">Released on @result.release_date.raw.ToLongDateString()</span>
+                                                            </div>
+                                                        </div>
+                                                        <div class="overview">
+                                                            <p>
+                                                                @result.overview.raw
+                                                            </p>
+                                                        </div>
+                                                        <div class="cast">
+
+                                                            @{
+                                                                var cast = string.Join(", ", result.cast.raw.Take(4));
+                                                                <p>
+                                                                    Starring @cast, ...
+                                                                </p>
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@code {
+    string querySearch;
+    bool isLoading = false;
+    private string sortOrder = "";
+    private SearchBarResultView selectedResult;
+    private string searchText;
+    private List<Result> results = new List<Result>();
+    private string castFilter = "";
+    private string genreFilter = "";
+    private string userScoreFilter = "";
+    private string runtimeFilter = "";
+    private string productionCompanyFilter = "";
+    private List<ResultFilter> filterList = new List<ResultFilter>();
+    private MudTheme Theme = new MudTheme();
+    private DialogOptions dialogOptions = new() { FullWidth = true };
+    private Settings settings;
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        settings = optionsAccessor.CurrentValue;
+        client.BaseAddress = new Uri(settings.ElasticTenantUrl);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ElasticEngineToken);
+
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        StringValues qsValue;
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("q", out qsValue))
+        {
+            querySearch = qsValue;
+        }
+
+        searchText = querySearch;
+        await GetSearchResults(querySearch);
+        this.StateHasChanged();
+    }
+
+    private async Task CheckBoxChecked(ChangeEventArgs selected, string field, string value)
+    {
+        var filter = filterList.Where(a => a.Field == field && a.Value == value).FirstOrDefault();
+
+        filter.Checked = (bool)selected.Value;
+
+        await GetSearchResults(querySearch);
+        this.StateHasChanged();
+    }
+
+    private async Task Click(Result result)
+    {
+        var clickRequest = new ClickRequest
+            {
+                query = querySearch,
+                document_id = result._meta.id
+            };
+
+        var clickResponse = await client.PostAsJsonAsync<ClickRequest>($"{settings.ElasticEngineName}/click", clickRequest);
+
+        if (clickResponse.IsSuccessStatusCode)
+        {
+            var response = await clickResponse.Content.ReadAsStringAsync();
+            var options = new DialogOptions { CloseOnEscapeKey = true };
+            var dialog = DialogService.Show<Dialog>("Click Tracked", options);
+        }
+    }
+
+
+    private async Task SortChanged(string sort)
+    {
+        sortOrder = sort;
+        await GetSearchResults(querySearch);
+    }
+
+
+
+    private async Task<IEnumerable<SearchBarResultView>> AutoComplete(string value)
+    {
+
+        List<SearchBarResultView> autoCompleteResults = new List<SearchBarResultView>();
+        if (value.Length > 3)
+        {
+            searchText = value;
+            // if text is null or empty, don't return values (drop-down will not open)
+            if (string.IsNullOrEmpty(value))
+            {
+                return autoCompleteResults;
+            }
+
+            var querySuggestionRequest = new QuerySuggestionRequest
+                {
+                    query = value,
+                    size = 3,
+                    types = new QuerySuggestionRequest.Types
+                    {
+                        documents = new QuerySuggestionRequest.Documents
+                        {
+                            fields = new string[] { "title" }
+                        }
+                    }
+                };
+
+
+            var suggestionResponse = await client.PostAsJsonAsync<QuerySuggestionRequest>($"{settings.ElasticEngineName}/query_suggestion", querySuggestionRequest);
+
+
+            if (suggestionResponse.IsSuccessStatusCode)
+            {
+                var suggestions = await suggestionResponse.Content.ReadFromJsonAsync<QuerySuggestionResult>();
+                if (suggestions.results != null && suggestions.results.documents.Length > 0)
+                {
+
+                    autoCompleteResults.AddRange(suggestions.results.documents.Select(a => new SearchBarResultView
+                        {
+                            ResultType = ResultType.Suggestion,
+                            Text = a.suggestion
+                        }));
+                }
+            }
+            await GetSearchResults(value, true);
+        }
+        this.StateHasChanged();
+        return autoCompleteResults;
+    }
+
+    private async Task GetSearchResults(string querySearch, bool newSearch = false)
+    {
+        isLoading = true;
+        SearchRequest searchRequest = new SearchRequest
+            {
+                query = querySearch,
+                page = new Web.Page
+                {
+                    size = 20,
+                    current = 1
+                },
+            };
+        if (!newSearch)
+        {
+            if (!string.IsNullOrEmpty(sortOrder))
+            {
+                searchRequest.sort = new List<Sort>
+            {
+                new Sort
+                {
+                      field = sortOrder.Split("|").FirstOrDefault(),
+                       direction = sortOrder.Split("|").LastOrDefault()
+                }
+            };
+            }
+
+
+            searchRequest.filters = filterList.Where(a => a.Checked).GroupBy(group => group.Field)
+                .Select(group => new Filter
+                    {
+                        field = group.Key,
+                        values = group.Select(a => a.Value).ToList(),
+                    }).ToList();
+
+        }
+
+
+        var request = SearchRequest.BuildSearchRequest(searchRequest);
+
+        var searchResponse = await client.PostAsync($"{settings.ElasticEngineName}/search", new StringContent(request, Encoding.UTF8, "application/json"));
+
+        if (searchResponse.IsSuccessStatusCode)
+        {
+            var foo = await searchResponse.Content.ReadAsStringAsync();
+
+            var searchResults = await searchResponse.Content.ReadFromJsonAsync<SearchResult>();
+            if (searchResults.results != null)
+            {
+                var tempfilterList = new List<ResultFilter>();
+                results = searchResults.results.ToList();
+
+
+                tempfilterList.AddRange(results.SelectMany(a => a.cast.raw).ToList().GroupBy(actor => actor)
+                .Select(group => new ResultFilter
+                    {
+                        Field = "cast",
+                        Value = group.Key,
+                        Count = group.Count()
+                    })
+                .OrderByDescending(x => x.Count).Take(5).ToList());
+
+                tempfilterList.AddRange(results.SelectMany(a => a.genres.raw).ToList().GroupBy(genre => genre)
+                .Select(group => new ResultFilter
+                    {
+                        Field = "genres",
+                        Value = group.Key,
+                        Count = group.Count()
+                    })
+                .OrderByDescending(x => x.Count).Take(5).ToList());
+
+                tempfilterList.AddRange(results.SelectMany(a => a.production_companies.raw).ToList().GroupBy(production => production)
+                .Select(group => new ResultFilter
+                    {
+                        Field = "production_companies",
+                        Value = group.Key,
+                        Count = group.Count()
+                    })
+                .OrderByDescending(x => x.Count).Take(5).ToList());
+
+
+                var scoreCeilings = new[] { 5.0f, 8.0f, 10.0f };
+                var scoreGroupings = results.Select(a => a.user_score.raw).ToList();
+                var groupedScores = scoreGroupings.GroupBy(item => scoreCeilings.First(ceiling => ceiling >= item)).ToList();
+
+
+                foreach (var score in groupedScores)
+                {
+                    switch (score.Key)
+                    {
+                        case 5.0f:
+                            tempfilterList.Add(new ResultFilter
+                                {
+                                    Field = "user_score",
+                                    Value = "0 - 5",
+                                    Count = score.Count()
+                                });
+                            break;
+                        case 8.0f:
+                            tempfilterList.Add(new ResultFilter
+                                {
+                                    Field = "user_score",
+                                    Value = "6 - 8",
+                                    Count = score.Count()
+                                });
+                            break;
+                        case 10.0f:
+                            tempfilterList.Add(new ResultFilter
+                                {
+                                    Field = "user_score",
+                                    Value = "9 - 10",
+                                    Count = score.Count()
+                                });
+                            break;
+                    }
+                }
+
+
+                tempfilterList.Add(new ResultFilter
+                    {
+                        Field = "runtime",
+                        Value = "Less than an hour",
+                        Count = results.Where(a => a.runtime.raw <= 60.0f).Count()
+                    });
+
+                tempfilterList.Add(new ResultFilter
+                    {
+                        Field = "runtime",
+                        Value = "More than an hour",
+                        Count = results.Where(a => a.runtime.raw > 60.0f).Count()
+                    });
+
+                var foundFilter = filterList.Where(a => a.Checked && tempfilterList.Select(b => b.Field).Contains(a.Field) && tempfilterList.Select(b => b.Value).Contains(a.Value)).FirstOrDefault();
+
+                if (foundFilter != null)
+                {
+                    var temp = tempfilterList.Where(a => a.Field == foundFilter.Field && a.Value == foundFilter.Value).Select(c => { c.Checked = foundFilter.Checked; return c; }).FirstOrDefault();
+                }
+                filterList = tempfilterList;
+
+            }
+        }
+        isLoading = false;
+    }
+
+    }
