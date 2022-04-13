@@ -31,11 +31,11 @@ namespace TMDBImport
 
             ConcurrentBag<Movie> movies = new ConcurrentBag<Movie>();
 
-            var maxIterations = 5;
+            var moviesToDownload = 5;
             var maxDOP = 10;
 
             // Divide into groups.
-            var parallelGroups = Enumerable.Range(0, maxIterations)
+            var parallelGroups = Enumerable.Range(0, moviesToDownload)
                                            .GroupBy(r => (r % maxDOP));
 
             var parallelTasks = parallelGroups.Select(groups =>
