@@ -31,13 +31,19 @@ namespace TMDBImport
 
             ConcurrentBag<Movie> movies = new ConcurrentBag<Movie>();
 
+            // This process will build a list of integers representing a Movie ID in The Internet Movie Database
+            // Not all IDs will return a movie so there is a blanket catch if there is an API error. You can do better
+            // Specify the amount of movies you want to collect
             var moviesToDownload = 5;
-            var maxDOP = 10;
+            var groupByAmount = 10;
 
-            // Divide into groups.
+            // Build list of integers based on variable than chunk into lists of the same size
             var parallelGroups = Enumerable.Range(0, moviesToDownload)
-                                           .GroupBy(r => (r % maxDOP));
+                                           .GroupBy(r => (r % groupByAmount));
 
+
+            // Build collection of Tasks to run in parallel
+            // Each task will call TMDB API and add API reponse to collection of movies in memory
             var parallelTasks = parallelGroups.Select(groups =>
             {
                 return Task.Run(async () =>
@@ -55,11 +61,8 @@ namespace TMDBImport
                 });
             });
 
+            // Await until all tasks are complete
             await Task.WhenAll(parallelTasks);
-
-
-            Console.WriteLine(movies.Count);
-
             return movies;
         }
 
@@ -71,6 +74,9 @@ namespace TMDBImport
                 PropertyNamingPolicy = new LowerCaseNamingPolicy() //make all serialized json properties lower case
             };
 
+
+            // Take list of Movies and chunk into lists of 100 to post to API. 
+            // The Elastic API has a limit of 100 documents to index at once
             var chunks = movies
                 .Select((x, i) => new { Index = i, Value = x })
                 .GroupBy(x => x.Index / 100)
@@ -84,7 +90,7 @@ namespace TMDBImport
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _settings.ElasticEngineToken);
                 // serialize C# object to string for post to API
                 string jsonString = JsonSerializer.Serialize(chunk, options);
-                request.Content = new StringContent(jsonString, Encoding.UTF8, "application/json");//CONTENT-TYPE header
+                request.Content = new StringContent(jsonString, Encoding.UTF8, "application/json");
                 await _httpClient.SendAsync(request);
             }
         }

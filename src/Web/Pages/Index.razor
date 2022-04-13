@@ -69,29 +69,93 @@
     private List<Result> popular = new List<Result>();
     private List<Result> recent = new List<Result>();
     private MudTheme Theme = new MudTheme();
-    private Settings settings;
+    private Settings settings = new Settings();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Build HttpClient for API calls with token from Elastic Cloud
+        settings = optionsAccessor.CurrentValue;
+        client.BaseAddress = new Uri(settings.ElasticTenantUrl);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ElasticEngineToken);
+
+        // Populate Recent and Popular Sections
+        await GetRecent();
+        await GetPopular();
+    }
+
+    /// <summary>
+    /// Search Function for MudBlazor Autocomplete control
+    /// Takes input and calls Elastic API to get list of Suggestions
+    /// </summary>
+    /// <param name="value">text in Autocomplete textbox</param>
+    /// <returns></returns>
+    private async Task<IEnumerable<SearchBarResultView>> Search(string value)
+    {
+
+        List<SearchBarResultView> results = new List<SearchBarResultView>();
+        if (value.Length > 3)
+        {
+            searchText = value;
+            // if text is null or empty, don't return values (drop-down will not open)
+            if (string.IsNullOrEmpty(value))
+            {
+                return results;
+            }
+
+            // Build QuerySuggestion Request Object to post to API
+            var querySuggestionRequest = new QuerySuggestionRequest
+                {
+                    query = value,
+                    size = 3,
+                    types = new QuerySuggestionRequest.Types
+                    {
+                        documents = new QuerySuggestionRequest.Documents
+                        {
+                            fields = new string[] { "title" }
+                        }
+                    }
+                };
 
 
+            // POST to Suggestion API and build list of suggestions to show in autocomplete dropdown
+            var suggestionResponse = await client.PostAsJsonAsync<QuerySuggestionRequest>($"{settings.ElasticEngineName}/query_suggestion", querySuggestionRequest);
+
+
+            if (suggestionResponse.IsSuccessStatusCode)
+            {
+                var suggestions = await suggestionResponse.Content.ReadFromJsonAsync<QuerySuggestionResult>();
+                if (suggestions?.results != null && suggestions.results.documents.Length > 0)
+                {
+
+                    results.AddRange(suggestions.results.documents.Select(a => new SearchBarResultView
+                        {
+                            ResultType = ResultType.Suggestion,
+                            Text = a.suggestion
+                        }));
+                }
+            }
+        }
+        return results;
+    }
+
+    /// <summary>
+    /// EventHandler for Keyboard Input of Search Bar
+    /// Captures if input was Enter Key and if so, take the search input and redirect to Search page
+    /// </summary>
+    /// <param name="e">Keyboard Input</param>
     private void SearchRedirect(KeyboardEventArgs e)
     {
         if (e.Code == "Enter" || e.Code == "NumpadEnter")
         {
             NavigationManager.NavigateTo($"search?q={searchText}");
         }
-
     }
 
-    protected override async Task OnInitializedAsync()
-    {
-        settings = optionsAccessor.CurrentValue;
-        client.BaseAddress = new Uri(settings.ElasticTenantUrl);
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ElasticEngineToken);
-
-        await GetRecent();
-        await GetPopular();
-    }
-
+    /// <summary>
+    /// Populate the Popular section at the bottom of the page
+    /// </summary>
+    /// <returns></returns>
     private async Task GetPopular()
     {
         SearchRequest searchRequest = new SearchRequest
@@ -126,6 +190,10 @@
         }
     }
 
+    /// <summary>
+    /// Populates the Recent Movies section at the bottom of the page
+    /// </summary>
+    /// <returns></returns>
     private async Task GetRecent()
     {
         SearchRequest searchRequest = new SearchRequest
@@ -158,53 +226,6 @@
                 recent = searchResults.results.ToList();
             }
         }
-    }
-
-    private async Task<IEnumerable<SearchBarResultView>> Search(string value)
-    {
-
-        List<SearchBarResultView> results = new List<SearchBarResultView>();
-        if (value.Length > 3)
-        {
-            searchText = value;
-            // if text is null or empty, don't return values (drop-down will not open)
-            if (string.IsNullOrEmpty(value))
-            {
-                return results;
-            }
-
-            var querySuggestionRequest = new QuerySuggestionRequest
-                {
-                    query = value,
-                    size = 3,
-                    types = new QuerySuggestionRequest.Types
-                    {
-                        documents = new QuerySuggestionRequest.Documents
-                        {
-                            fields = new string[] { "title" }
-                        }
-                    }
-                };
-
-
-            var suggestionResponse = await client.PostAsJsonAsync<QuerySuggestionRequest>($"{settings.ElasticEngineName}/query_suggestion", querySuggestionRequest);
-
-
-            if (suggestionResponse.IsSuccessStatusCode)
-            {
-                var suggestions = await suggestionResponse.Content.ReadFromJsonAsync<QuerySuggestionResult>();
-                if (suggestions.results != null && suggestions.results.documents.Length > 0)
-                {
-
-                    results.AddRange(suggestions.results.documents.Select(a => new SearchBarResultView
-                        {
-                            ResultType = ResultType.Suggestion,
-                            Text = a.suggestion
-                        }));
-                }
-            }
-        }
-        return results;
     }
 }
 

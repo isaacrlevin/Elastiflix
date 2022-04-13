@@ -236,11 +236,13 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Build HttpClient for API calls with token from Elastic Cloud
         settings = optionsAccessor.CurrentValue;
         client.BaseAddress = new Uri(settings.ElasticTenantUrl);
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", settings.ElasticEngineToken);
 
+        // Parse search query from Query String
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         StringValues qsValue;
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("q", out qsValue))
@@ -253,24 +255,40 @@
         this.StateHasChanged();
     }
 
+    /// <summary>
+    /// Event that fires when user checks filter box
+    /// </summary>
+    /// <param name="selected">boolean representing checkbox checked</param>
+    /// <param name="field">filter field that was checked (ie Production Company)</param>
+    /// <param name="value">value of filter field that was checked (ie. LucasFilms)</param>
+    /// <returns></returns>
     private async Task CheckBoxChecked(ChangeEventArgs selected, string field, string value)
     {
         var filter = filterList.Where(a => a.Field == field && a.Value == value).FirstOrDefault();
 
         filter.Checked = (bool)selected.Value;
 
+        // Fire API call to update results
         await GetSearchResults(querySearch);
         this.StateHasChanged();
     }
 
+    /// <summary>
+    /// If a user clicks a result, we want to track the click in Elastic Cloud
+    /// This will be useful as we tweak our search relevance from user feedback
+    /// </summary>
+    /// <param name="result">Result representing movie</param>
+    /// <returns></returns>
     private async Task Click(Result result)
     {
+        // Build Click Request with query and document clicked
         var clickRequest = new ClickRequest
             {
                 query = querySearch,
                 document_id = result._meta.id
             };
 
+        // POST Click event and pop dialog box stating that click is tracked
         var clickResponse = await client.PostAsJsonAsync<ClickRequest>($"{settings.ElasticEngineName}/click", clickRequest);
 
         if (clickResponse.IsSuccessStatusCode)
@@ -281,7 +299,11 @@
         }
     }
 
-
+    /// <summary>
+    /// Event fired when sort dropdown is changed
+    /// </summary>
+    /// <param name="sort">type of sort requested</param>
+    /// <returns></returns>
     private async Task SortChanged(string sort)
     {
         sortOrder = sort;
@@ -289,7 +311,12 @@
     }
 
 
-
+    /// <summary>
+    /// Search Function for MudBlazor Autocomplete control
+    /// Takes input and calls Elastic API to get list of Suggestions
+    /// </summary>
+    /// <param name="value">text in Autocomplete textbox</param>
+    /// <returns></returns>
     private async Task<IEnumerable<SearchBarResultView>> AutoComplete(string value)
     {
 
@@ -303,6 +330,7 @@
                 return autoCompleteResults;
             }
 
+            // Build QuerySuggestion Request Object to post to API
             var querySuggestionRequest = new QuerySuggestionRequest
                 {
                     query = value,
@@ -316,7 +344,7 @@
                     }
                 };
 
-
+            // POST to Suggestion API and build list of suggestions to show in autocomplete dropdown
             var suggestionResponse = await client.PostAsJsonAsync<QuerySuggestionRequest>($"{settings.ElasticEngineName}/query_suggestion", querySuggestionRequest);
 
 
@@ -339,6 +367,12 @@
         return autoCompleteResults;
     }
 
+    /// <summary>
+    /// Gets list of actual results from our movie list to build the results pane
+    /// </summary>
+    /// <param name="querySearch">value to search on</param>
+    /// <param name="newSearch">boolean to represnt if filter and sort should be included in search</param>
+    /// <returns></returns>
     private async Task GetSearchResults(string querySearch, bool newSearch = false)
     {
         isLoading = true;
@@ -351,10 +385,12 @@
                     current = 1
                 },
             };
+        // If not new search (filter or sort event), add additional fields to search request object
         if (!newSearch)
         {
             if (!string.IsNullOrEmpty(sortOrder))
             {
+                // Build new Sort
                 searchRequest.sort = new List<Sort>
             {
                 new Sort
@@ -375,9 +411,10 @@
 
         }
 
-
+        // Build Search Request Object to post to API
         var request = SearchRequest.BuildSearchRequest(searchRequest);
 
+        // POST to Search API and build list of results to show in results area
         var searchResponse = await client.PostAsync($"{settings.ElasticEngineName}/search", new StringContent(request, Encoding.UTF8, "application/json"));
 
         if (searchResponse.IsSuccessStatusCode)
@@ -390,7 +427,7 @@
                 var tempfilterList = new List<ResultFilter>();
                 results = searchResults.results.ToList();
 
-
+                // Section below takes current result and builds custom filters that match against that result set
                 tempfilterList.AddRange(results.SelectMany(a => a.cast.raw).ToList().GroupBy(actor => actor)
                 .Select(group => new ResultFilter
                     {
